@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Camera Controller"
 include(":app")
+ 

@@ -10,6 +10,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
 import android.os.Handler
@@ -20,6 +21,19 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import androidx.core.app.ActivityCompat
+
+data class CaptureMetadata(
+    val iso: Int,
+    val exposureNs: Long,
+    val focusDistance: Float,
+    val gain: Float,
+)
+
+data class CameraCapabilities(
+    val isoRange: Range<Int>,
+    val exposureRange: Range<Long>,
+    val minFocusDistance: Float,
+)
 
 class CameraController(private val context: Context) {
 
@@ -50,6 +64,7 @@ class CameraController(private val context: Context) {
 
     var onFrameAvailable: ((ByteArray) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onCaptureMetadata: ((CaptureMetadata) -> Unit)? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -74,6 +89,17 @@ class CameraController(private val context: Context) {
     fun getSupportedResolutions(): List<Size> {
         val map = characteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         return map?.getOutputSizes(ImageFormat.JPEG)?.toList() ?: emptyList()
+    }
+
+    fun getCapabilities(): CameraCapabilities? {
+        val chars = characteristics ?: return null
+        val isoRange = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+            ?: Range(100, 800)
+        val exposureRange = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+            ?: Range(1_000_000L, 1_000_000_000L)
+        val minFocusDist = chars.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
+            ?: 0f
+        return CameraCapabilities(isoRange, exposureRange, minFocusDist)
     }
 
     @Suppress("MissingPermission")
@@ -191,11 +217,26 @@ class CameraController(private val context: Context) {
         }
     }
 
+    private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
+            val exposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
+            val focusDist = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: 0f
+            val postGain = result.get(CaptureResult.CONTROL_POST_RAW_SENSITIVITY_BOOST)
+            val gain = (postGain ?: 100) / 100f
+            onCaptureMetadata?.invoke(CaptureMetadata(iso, exposureNs, focusDist, gain))
+        }
+    }
+
     private fun applyRepeatingRequest() {
         val builder = requestBuilder ?: return
         val session = captureSession ?: return
         try {
-            session.setRepeatingRequest(builder.build(), null, cameraHandler)
+            session.setRepeatingRequest(builder.build(), captureCallback, cameraHandler)
         } catch (e: CameraAccessException) {
             Log.e(TAG, "Failed to set repeating request", e)
         }

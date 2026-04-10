@@ -1,0 +1,11 @@
+CameraControllerApp/.idea/
+CameraControllerApp/*.iml
+CameraControllerApp/.gradle/
+CameraControllerApp/build/
+CameraControllerApp/**/build/
+CameraControllerApp/local.properties
+*.log
+.DS_Store
+Thumbs.db
+*.jks
+*.keystore

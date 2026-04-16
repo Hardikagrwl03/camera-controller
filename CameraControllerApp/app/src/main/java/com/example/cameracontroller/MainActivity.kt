@@ -12,6 +12,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -37,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,7 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.example.cameracontroller.ui.theme.CameraControllerTheme
+import com.example.cameracontroller.ui.CameraViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -63,6 +65,7 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
     }
 
+    private val viewModel: CameraViewModel by viewModels()
     private lateinit var cameraController: CameraController
     private lateinit var connectionManager: USBConnectionManager
     private lateinit var frameStreamer: FrameStreamer
@@ -100,9 +103,7 @@ class MainActivity : ComponentActivity() {
         initComponents()
 
         setContent {
-            CameraControllerTheme {
-                CameraStreamScreen()
-            }
+            CameraStreamScreen()
         }
 
         checkPermissions()
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
     // ── Initialisation ─────────────────────────────────────────────────
 
     private fun initComponents() {
-        cameraController = CameraController(this)
+        cameraController = CameraController(this, viewModel)
         connectionManager = USBConnectionManager()
         frameStreamer = FrameStreamer(connectionManager)
         commandServer = CommandServer(connectionManager)
@@ -255,39 +256,10 @@ class MainActivity : ComponentActivity() {
 
     // ── Compose UI ─────────────────────────────────────────────────────
 
-    @Composable
-    fun rememberDeviceRotation(): Float {
-        val context = LocalContext.current
-        val rotation = remember { mutableFloatStateOf(0f) }
-
-        DisposableEffect(context) {
-            val listener = object : OrientationEventListener(context) {
-                override fun onOrientationChanged(orientation: Int) {
-                    if (orientation == ORIENTATION_UNKNOWN) return
-                    val snapped = when {
-                        orientation in 315..359 || orientation in 0..44 -> 0f
-                        orientation in 45..134  -> -90f    // landscape-right
-                        orientation in 135..224 -> -180f
-                        orientation in 225..314 -> -270f   // landscape-left
-                        else -> 0f
-                    }
-                    rotation.floatValue = snapped
-                }
-            }
-            listener.enable()
-            onDispose { listener.disable() }
-        }
-        return rotation.floatValue
-    }
 
     @Composable
     fun CameraStreamScreen() {
-        val deviceRotation = rememberDeviceRotation()
-        val animatedRotation by animateFloatAsState(
-            targetValue = deviceRotation,
-            animationSpec = tween(durationMillis = 300),
-            label = "rotation"
-        )
+        val state by viewModel.cameraState. collectAsState()
         var showCapabilities by remember { mutableStateOf(false) }
 
         Box(
@@ -298,7 +270,6 @@ class MainActivity : ComponentActivity() {
             CameraPreview(modifier = Modifier.fillMaxSize())
 
             ConnectionBadge(
-                animatedRotation = animatedRotation,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(16.dp)
@@ -306,7 +277,6 @@ class MainActivity : ComponentActivity() {
 
             // Info button — top-right, rotates with device
             InfoButton(
-                animatedRotation = animatedRotation,
                 onClick = { showCapabilities = true },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -314,7 +284,7 @@ class MainActivity : ComponentActivity() {
             )
 
             CameraInfoOverlay(
-                animatedRotation = animatedRotation,
+                state,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
@@ -352,14 +322,12 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun ConnectionBadge(animatedRotation: Float, modifier: Modifier = Modifier) {
+    fun ConnectionBadge(modifier: Modifier = Modifier) {
         val connected by isConnected
-        val status by statusText
 
         Box(
             modifier = modifier
                 .wrapContentSize()
-                .graphicsLayer { rotationZ = animatedRotation }
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.Black.copy(alpha = 0.6f))
                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -385,29 +353,28 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun CameraInfoOverlay(animatedRotation: Float, modifier: Modifier = Modifier) {
-        val fps by fpsText
-        val iso by isoText
-        val shutter by shutterText
-        val focusDist by focusDistText
-        val gain by gainText
-        val dims by dimensionsText
+    fun CameraInfoOverlay(state: CameraState, modifier: Modifier = Modifier) {
+//        val fps by fpsText
+//        val iso by isoText
+//        val shutter by shutterText
+//        val focusDist by focusDistText
+//        val gain by gainText
+//        val dims by dimensionsText
 
         Box(
             modifier = modifier
                 .wrapContentSize()
-                .graphicsLayer { rotationZ = animatedRotation }
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.Black.copy(alpha = 0.6f))
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                InfoRow(label = "ISO", value = iso)
-                InfoRow(label = "Shutter", value = shutter)
-                InfoRow(label = "Focus", value = focusDist)
-                InfoRow(label = "Gain", value = gain)
-                InfoRow(label = "Dims", value = dims)
-                InfoRow(label = "FPS", value = fps)
+                InfoRow(label = "ISO", value = state.iso.toString())
+                InfoRow(label = "Shutter", value = "1/${(1_000_000_000/(state.exposureTime+1))}")
+                InfoRow(label = "Focus", value = state.focusDistance.toString())
+//                InfoRow(label = "Gain", value = gain)
+//                InfoRow(label = "Dims", value = dims)
+                InfoRow(label = "FPS", value = state.fps.toString())
             }
         }
     }
@@ -433,11 +400,10 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun InfoButton(animatedRotation: Float, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    fun InfoButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
         IconButton(
             onClick = onClick,
             modifier = modifier
-                .graphicsLayer { rotationZ = animatedRotation }
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.6f))

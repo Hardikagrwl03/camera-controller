@@ -21,6 +21,7 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import androidx.core.app.ActivityCompat
+import com.example.cameracontroller.ui.CameraViewModel
 
 data class CaptureMetadata(
     val iso: Int,
@@ -35,7 +36,7 @@ data class CameraCapabilities(
     val minFocusDistance: Float,
 )
 
-class CameraController(private val context: Context) {
+class CameraController(private val context: Context, private val viewModel: CameraViewModel) {
 
     companion object {
         private const val TAG = "CameraController"
@@ -223,6 +224,8 @@ class CameraController(private val context: Context) {
             request: CaptureRequest,
             result: TotalCaptureResult
         ) {
+            viewModel.onCaptureResult(result)
+            viewModel.updateRequestSettings(request)
             val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
             val exposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
             val focusDist = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: 0f

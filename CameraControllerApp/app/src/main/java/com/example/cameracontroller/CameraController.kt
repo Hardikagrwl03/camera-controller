@@ -40,8 +40,7 @@ data class CameraCapabilities(
     val minFocusDistance: Float,
 )
 
-class CameraController(private val context: Context, private val viewModel: CameraViewModel) :
-    CameraCommandInterface {
+class CameraController(private val context: Context, private val viewModel: CameraViewModel) : CameraCommandInterface {
 
     companion object {
         private const val TAG = "CameraController"

@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.cameracontroller.interfaces.NetworkProtocolCommand
+import com.example.cameracontroller.ui.CameraPreview
 import com.example.cameracontroller.ui.CameraViewModel
 import com.example.cameracontroller.utils.NetworkCommandValues
 import com.example.cameracontroller.utils.NetworkCommandValues.SET_EXPOSURE
@@ -188,13 +189,13 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "System started")
     }
 
-    private fun openCameraWithPreview(surface: Surface) {
-        cameraController.openCamera(
-            cameraController.currentWidth,
-            cameraController.currentHeight,
-            surface
-        )
-    }
+//    private fun openCameraWithPreview(surface: Surface) {
+//        cameraController.openCamera(
+//            cameraController.currentWidth,
+//            cameraController.currentHeight,
+//            surface
+//        )
+//    }
 
     // ── FPS tracking ───────────────────────────────────────────────────
 
@@ -298,7 +299,7 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            CameraPreview(state, modifier = Modifier.fillMaxSize())
+            CameraPreview(cameraController, modifier = Modifier.fillMaxSize())
 
             ConnectionBadge(
                 state,
@@ -329,30 +330,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    fun CameraPreview(state: CameraState, modifier: Modifier) {
-        AndroidView(
-            factory = { ctx ->
-                TextureView(ctx).apply {
-                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                        override fun onSurfaceTextureAvailable(
-                            st: SurfaceTexture, w: Int, h: Int
-                        ) {
-                            openCameraWithPreview(Surface(st))
-                        }
-
-                        override fun onSurfaceTextureSizeChanged(
-                            st: SurfaceTexture, w: Int, h: Int
-                        ) = Unit
-
-                        override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
-                        override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
-                    }
-                }
-            },
-            modifier = modifier.aspectRatio(3f/4f)
-        )
-    }
+//    @Composable
+//    fun CameraPreview(state: CameraState, modifier: Modifier) {
+//        AndroidView(
+//            factory = { ctx ->
+//                TextureView(ctx).apply {
+//                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+//                        override fun onSurfaceTextureAvailable(
+//                            st: SurfaceTexture, w: Int, h: Int
+//                        ) {
+//                            openCameraWithPreview(Surface(st))
+//                        }
+//
+//                        override fun onSurfaceTextureSizeChanged(
+//                            st: SurfaceTexture, w: Int, h: Int
+//                        ) = Unit
+//
+//                        override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
+//                        override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
+//                    }
+//                }
+//            },
+//            modifier = modifier.aspectRatio(3f/4f)
+//        )
+//    }
 
     @Composable
     fun ConnectionBadge(state: CameraState, modifier: Modifier = Modifier) {

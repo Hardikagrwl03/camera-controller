@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.util.Log
-import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.TextureView
 import android.view.WindowManager
@@ -13,8 +12,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,10 +35,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,8 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,7 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.example.cameracontroller.interfaces.NetworkProtocolCommand
 import com.example.cameracontroller.ui.CameraViewModel
+import com.example.cameracontroller.utils.NetworkCommandValues
+import com.example.cameracontroller.utils.NetworkCommandValues.SET_EXPOSURE
+import com.example.cameracontroller.utils.NetworkCommandValues.SET_FOCUS
 
 class MainActivity : ComponentActivity() {
 
@@ -83,6 +81,12 @@ class MainActivity : ComponentActivity() {
 
     private var frameCount = 0
     private var lastFpsTimestamp = System.currentTimeMillis()
+
+    private val networkProtocolCommandListener = object : NetworkProtocolCommand {
+        override fun onReceive(command: String, value: Any?) {
+            handleCommand(command, value)
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -149,7 +153,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        commandServer.onCommand = { cmd, value -> handleCommand(cmd, value) }
+        commandServer.clientNetworkProtocolCommand = networkProtocolCommandListener
+
+//        commandServer.onCommand = { cmd, value -> handleCommand(cmd, value) }
     }
 
     private fun formatShutter(ns: Long): String {
@@ -207,69 +213,95 @@ class MainActivity : ComponentActivity() {
 
     // ── Command dispatch ───────────────────────────────────────────────
 
+    private fun getNetworkCommandValue(name: String): NetworkCommandValues {
+        return when (name) {
+            "set_exposure" -> SET_EXPOSURE
+            "set_iso" -> NetworkCommandValues.SET_ISO
+            "set_focus" -> SET_FOCUS
+            "set_resolution" -> NetworkCommandValues.SET_RESOLUTION
+            "set_fps" -> NetworkCommandValues.SET_FPS
+            "enable_auto_exposure" -> NetworkCommandValues.ENABLE_AE
+            "disable_auto_exposure" -> NetworkCommandValues.DISABLE_AE
+            "enable_auto_focus" -> NetworkCommandValues.ENABLE_AF
+            "disable_auto_focus" -> NetworkCommandValues.DISABLE_AF
+            "set_white_balance" -> NetworkCommandValues.SET_WB
+            "set_torch" -> NetworkCommandValues.SET_TORCH
+            "capture_photo" -> NetworkCommandValues.CAPTURE_PHOTO
+            else -> throw RuntimeException("Unknown Command name $name")
+        }
+    }
+
     private fun handleCommand(cmd: String, value: Any?) {
         Log.i(TAG, "Command: $cmd  value=$value")
-        when (cmd) {
-            "set_exposure" -> {
+        val networkCommandValue = getNetworkCommandValue(cmd)
+        when (networkCommandValue) {
+            SET_EXPOSURE -> {
                 val ns = (value as? Number)?.toLong() ?: return
                 cameraController.setExposure(ns)
             }
-            "set_iso" -> {
+
+            NetworkCommandValues.SET_ISO -> {
                 val iso = (value as? Number)?.toInt() ?: return
                 cameraController.setISO(iso)
             }
-            "set_focus" -> {
+
+            SET_FOCUS -> {
                 val d = (value as? Number)?.toFloat() ?: return
                 cameraController.setFocusDistance(d)
             }
-            "set_resolution" -> {
+
+            NetworkCommandValues.SET_RESOLUTION -> {
                 val parts = value?.toString()?.split("x") ?: return
                 if (parts.size != 2) return
                 val w = parts[0].toIntOrNull() ?: return
                 val h = parts[1].toIntOrNull() ?: return
                 cameraController.changeResolution(w, h)
             }
-            "set_fps" -> {
+
+            NetworkCommandValues.SET_FPS -> {
                 val fps = (value as? Number)?.toInt() ?: return
                 cameraController.setFrameRate(fps)
             }
-            "enable_auto_exposure"  -> cameraController.enableAutoExposure()
-            "disable_auto_exposure" -> cameraController.disableAutoExposure()
-            "enable_auto_focus"     -> cameraController.enableAutoFocus()
-            "disable_auto_focus"    -> cameraController.disableAutoFocus()
-            "set_white_balance" -> {
+
+            NetworkCommandValues.ENABLE_AE -> cameraController.enableAutoExposure()
+            NetworkCommandValues.DISABLE_AE -> cameraController.disableAutoExposure()
+            NetworkCommandValues.ENABLE_AF -> cameraController.enableAutoFocus()
+            NetworkCommandValues.DISABLE_AF -> cameraController.disableAutoFocus()
+            NetworkCommandValues.SET_WB -> {
                 val mode = (value as? Number)?.toInt() ?: return
                 cameraController.setWhiteBalance(mode)
             }
-            "set_torch" -> {
+
+            NetworkCommandValues.SET_TORCH -> {
                 val on = when (value) {
                     is Boolean -> value
-                    is Number  -> value.toInt() != 0
-                    else       -> return
+                    is Number -> value.toInt() != 0
+                    else -> return
                 }
                 cameraController.setTorch(on)
             }
-            "capture_photo" -> cameraController.capturePhoto()
-            else -> Log.w(TAG, "Unknown command: $cmd")
+
+            NetworkCommandValues.CAPTURE_PHOTO -> cameraController.capturePhoto()
         }
     }
 
     // ── Compose UI ─────────────────────────────────────────────────────
 
-
     @Composable
     fun CameraStreamScreen() {
-        val state by viewModel.cameraState. collectAsState()
+
         var showCapabilities by remember { mutableStateOf(false) }
+        val state by viewModel.cameraState.collectAsState()
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            CameraPreview(modifier = Modifier.fillMaxSize())
+            CameraPreview(state, modifier = Modifier.fillMaxSize())
 
             ConnectionBadge(
+                state,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(16.dp)
@@ -277,6 +309,7 @@ class MainActivity : ComponentActivity() {
 
             // Info button — top-right, rotates with device
             InfoButton(
+                state,
                 onClick = { showCapabilities = true },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -297,7 +330,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun CameraPreview(modifier: Modifier) {
+    fun CameraPreview(state: CameraState, modifier: Modifier) {
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
@@ -317,13 +350,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             },
-            modifier = modifier
+            modifier = modifier.aspectRatio(3f/4f)
         )
     }
 
     @Composable
-    fun ConnectionBadge(modifier: Modifier = Modifier) {
+    fun ConnectionBadge(state: CameraState, modifier: Modifier = Modifier) {
         val connected by isConnected
+        val status by statusText
 
         Box(
             modifier = modifier
@@ -354,12 +388,12 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun CameraInfoOverlay(state: CameraState, modifier: Modifier = Modifier) {
-//        val fps by fpsText
-//        val iso by isoText
-//        val shutter by shutterText
-//        val focusDist by focusDistText
-//        val gain by gainText
-//        val dims by dimensionsText
+        val fps by fpsText
+        val iso by isoText
+        val shutter by shutterText
+        val focusDist by focusDistText
+        val gain by gainText
+        val dims by dimensionsText
 
         Box(
             modifier = modifier
@@ -370,7 +404,10 @@ class MainActivity : ComponentActivity() {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 InfoRow(label = "ISO", value = state.iso.toString())
-                InfoRow(label = "Shutter", value = "1/${(1_000_000_000/(state.exposureTime+1))}")
+                InfoRow(
+                    label = "Shutter",
+                    value = "1/${((1000000000 / (state.exposureTime + 1)).toString())}"
+                )
                 InfoRow(label = "Focus", value = state.focusDistance.toString())
 //                InfoRow(label = "Gain", value = gain)
 //                InfoRow(label = "Dims", value = dims)
@@ -400,7 +437,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun InfoButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    fun InfoButton(state: CameraState, onClick: () -> Unit, modifier: Modifier = Modifier) {
         IconButton(
             onClick = onClick,
             modifier = modifier

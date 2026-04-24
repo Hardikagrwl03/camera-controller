@@ -2,13 +2,17 @@ package com.example.cameracontroller.ui
 
 import android.hardware.camera2.*
 import android.graphics.Rect
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import com.example.cameracontroller.CameraState
+import com.example.cameracontroller.interfaces.CameraCommandInterface
 
-class CameraViewModel : ViewModel() {
+private const val TAG = "CameraViewModel"
+
+class CameraViewModel : ViewModel(), CameraCommandInterface {
 
     // 🔥 Single source of truth
     private val _cameraState = MutableStateFlow(CameraState())
@@ -137,7 +141,7 @@ class CameraViewModel : ViewModel() {
         }
     }
 
-    fun enableAutoExposure() {
+    override fun enableAutoExposure() {
         _cameraState.update {
             it.copy(
                 requestedIso = null,
@@ -147,7 +151,19 @@ class CameraViewModel : ViewModel() {
         }
     }
 
-    fun setFocusDistance(distance: Float) {
+    override fun disableAutoExposure() {
+
+    }
+
+    override fun setExposure(nanoseconds: Long) {
+
+    }
+
+    override fun setISO(iso: Int) {
+
+    }
+
+    override fun setFocusDistance(distance: Float) {
         _cameraState.update {
             it.copy(
                 focusDistance = distance,
@@ -156,18 +172,47 @@ class CameraViewModel : ViewModel() {
         }
     }
 
-    fun enableAutoFocus() {
+    override fun enableAutoFocus() {
         _cameraState.update {
             it.copy(isAutoFocus = true)
         }
     }
 
-    fun setWhiteBalance(mode: Int) {
+    override fun disableAutoFocus() {
+
+    }
+
+    override fun setWhiteBalance(mode: Int) {
         _cameraState.update {
             it.copy(
                 awbMode = mode,
                 isAutoWhiteBalance = (mode != CaptureRequest.CONTROL_AWB_MODE_OFF)
             )
         }
+    }
+
+    override fun setFrameRate(fps: Int) {
+
+    }
+
+    override fun setTorch(enabled: Boolean) {
+
+    }
+
+    override fun changeResolution(width: Int, height: Int) {
+
+    }
+
+    override fun capturePhoto() {
+
+    }
+
+    init {
+        Log.i(TAG, "init#")
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        Log.i(TAG, "onCleared#")
     }
 }

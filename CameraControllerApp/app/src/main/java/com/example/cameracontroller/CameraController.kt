@@ -21,7 +21,11 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import androidx.core.app.ActivityCompat
+import com.example.cameracontroller.interfaces.CameraCommandInterface
 import com.example.cameracontroller.ui.CameraViewModel
+import com.example.cameracontroller.utils.CameraConstants
+import com.example.cameracontroller.utils.CameraConstants.EXPOSURE_RANGE
+import com.example.cameracontroller.utils.CameraConstants.ISO_RANGE
 
 data class CaptureMetadata(
     val iso: Int,
@@ -36,7 +40,8 @@ data class CameraCapabilities(
     val minFocusDistance: Float,
 )
 
-class CameraController(private val context: Context, private val viewModel: CameraViewModel) {
+class CameraController(private val context: Context, private val viewModel: CameraViewModel) :
+    CameraCommandInterface {
 
     companion object {
         private const val TAG = "CameraController"
@@ -58,9 +63,9 @@ class CameraController(private val context: Context, private val viewModel: Came
     private var cameraId: String = ""
     private var characteristics: CameraCharacteristics? = null
 
-    var currentWidth = 1280
+    var currentWidth = CameraConstants.WIDTH
         private set
-    var currentHeight = 720
+    var currentHeight = CameraConstants.HEIGHT
         private set
 
     var onFrameAvailable: ((ByteArray) -> Unit)? = null
@@ -95,9 +100,9 @@ class CameraController(private val context: Context, private val viewModel: Came
     fun getCapabilities(): CameraCapabilities? {
         val chars = characteristics ?: return null
         val isoRange = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
-            ?: Range(100, 800)
+            ?: ISO_RANGE
         val exposureRange = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
-            ?: Range(1_000_000L, 1_000_000_000L)
+            ?: EXPOSURE_RANGE
         val minFocusDist = chars.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
             ?: 0f
         return CameraCapabilities(isoRange, exposureRange, minFocusDist)
@@ -157,19 +162,20 @@ class CameraController(private val context: Context, private val viewModel: Came
 
     private fun createImageReader(width: Int, height: Int) {
         imageReader?.close()
-        imageReader = ImageReader.newInstance(width, height, ImageFormat.JPEG, MAX_IMAGES).apply {
-            setOnImageAvailableListener({ reader ->
-                val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                try {
-                    val jpeg = ImageUtils.extractJpeg(image)
-                    onFrameAvailable?.invoke(jpeg)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Frame extraction error", e)
-                } finally {
-                    image.close()
-                }
-            }, cameraHandler)
-        }
+        imageReader =
+            ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, MAX_IMAGES).apply {
+                setOnImageAvailableListener({ reader ->
+                    val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    try {
+                        val jpeg = ImageUtils.extractJpeg(image)
+                        onFrameAvailable?.invoke(jpeg)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Frame extraction error", e)
+                    } finally {
+                        image.close()
+                    }
+                }, cameraHandler)
+            }
     }
 
     @Suppress("DEPRECATION")
@@ -186,11 +192,12 @@ class CameraController(private val context: Context, private val viewModel: Came
                 override fun onConfigured(session: CameraCaptureSession) {
                     Log.i(TAG, "Capture session configured")
                     captureSession = session
-                    requestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        addTarget(reader.surface)
-                        previewSurface?.let { addTarget(it) }
-                        applyLowLatencyDefaults(this)
-                    }
+                    requestBuilder =
+                        device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                            addTarget(reader.surface)
+                            previewSurface?.let { addTarget(it) }
+                            applyLowLatencyDefaults(this)
+                        }
                     applyRepeatingRequest()
                 }
 
@@ -251,7 +258,7 @@ class CameraController(private val context: Context, private val viewModel: Came
 
     // ── Remote parameter controls ──────────────────────────────────────
 
-    fun setExposure(nanoseconds: Long) = runOnCameraThread {
+    override fun setExposure(nanoseconds: Long) = runOnCameraThread {
         requestBuilder?.apply {
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
             set(CaptureRequest.SENSOR_EXPOSURE_TIME, nanoseconds)
@@ -260,7 +267,7 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.d(TAG, "Exposure → $nanoseconds ns")
     }
 
-    fun setISO(iso: Int) = runOnCameraThread {
+    override fun setISO(iso: Int) = runOnCameraThread {
         requestBuilder?.apply {
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
             set(CaptureRequest.SENSOR_SENSITIVITY, iso)
@@ -269,7 +276,7 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.d(TAG, "ISO → $iso")
     }
 
-    fun setFocusDistance(distance: Float) = runOnCameraThread {
+    override fun setFocusDistance(distance: Float) = runOnCameraThread {
         requestBuilder?.apply {
             set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
             set(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
@@ -278,19 +285,22 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.d(TAG, "Focus → $distance diopters")
     }
 
-    fun enableAutoExposure() = runOnCameraThread {
+    override fun enableAutoExposure() = runOnCameraThread {
+        viewModel.enableAutoExposure()
         requestBuilder?.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
         applyRepeatingRequest()
         Log.d(TAG, "AE ON")
     }
 
-    fun disableAutoExposure() = runOnCameraThread {
+    override fun disableAutoExposure() = runOnCameraThread {
+        viewModel.disableAutoExposure()
         requestBuilder?.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
         applyRepeatingRequest()
         Log.d(TAG, "AE OFF")
     }
 
-    fun enableAutoFocus() = runOnCameraThread {
+    override fun enableAutoFocus() = runOnCameraThread {
+        viewModel.enableAutoFocus()
         requestBuilder?.set(
             CaptureRequest.CONTROL_AF_MODE,
             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
@@ -299,25 +309,29 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.d(TAG, "AF ON (continuous-video)")
     }
 
-    fun disableAutoFocus() = runOnCameraThread {
+    override fun disableAutoFocus() = runOnCameraThread {
+        viewModel.disableAutoFocus()
         requestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
         applyRepeatingRequest()
         Log.d(TAG, "AF OFF")
     }
 
-    fun setWhiteBalance(mode: Int) = runOnCameraThread {
+    override fun setWhiteBalance(mode: Int) = runOnCameraThread {
+        viewModel.setWhiteBalance(mode)
         requestBuilder?.set(CaptureRequest.CONTROL_AWB_MODE, mode)
         applyRepeatingRequest()
         Log.d(TAG, "AWB mode → $mode")
     }
 
-    fun setFrameRate(fps: Int) = runOnCameraThread {
+    override fun setFrameRate(fps: Int) = runOnCameraThread {
+        viewModel.setFrameRate(fps)
         requestBuilder?.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(fps, fps))
         applyRepeatingRequest()
         Log.d(TAG, "FPS → $fps")
     }
 
-    fun setTorch(enabled: Boolean) = runOnCameraThread {
+    override fun setTorch(enabled: Boolean) = runOnCameraThread {
+        viewModel.setTorch(enabled)
         requestBuilder?.set(
             CaptureRequest.FLASH_MODE,
             if (enabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
@@ -326,8 +340,9 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.d(TAG, "Torch → $enabled")
     }
 
-    fun changeResolution(width: Int, height: Int) = runOnCameraThread {
+    override fun changeResolution(width: Int, height: Int) = runOnCameraThread {
         Log.i(TAG, "Resolution change → ${width}x$height")
+        viewModel.changeResolution(width, height)
         currentWidth = width
         currentHeight = height
         captureSession?.close()
@@ -336,7 +351,8 @@ class CameraController(private val context: Context, private val viewModel: Came
         createCaptureSession()
     }
 
-    fun capturePhoto() = runOnCameraThread {
+    override fun capturePhoto() = runOnCameraThread {
+        viewModel.capturePhoto()
         val device = cameraDevice ?: return@runOnCameraThread
         val session = captureSession ?: return@runOnCameraThread
         val reader = imageReader ?: return@runOnCameraThread

@@ -1,6 +1,7 @@
 package com.example.cameracontroller
 
 import android.util.Log
+import com.example.cameracontroller.interfaces.NetworkProtocolCommand
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.IOException
@@ -11,7 +12,9 @@ class CommandServer(private val connectionManager: USBConnectionManager) {
         private const val TAG = "CommandServer"
     }
 
-    var onCommand: ((command: String, value: Any?) -> Unit)? = null
+    var clientNetworkProtocolCommand: NetworkProtocolCommand? = null
+
+//    var onCommand: ((command: String, value: Any?) -> Unit)? = null
     private var listenerThread: Thread? = null
 
     @Volatile
@@ -35,7 +38,8 @@ class CommandServer(private val connectionManager: USBConnectionManager) {
                                 val cmd = json.getString("cmd")
                                 val value: Any? = json.opt("value")
                                 Log.d(TAG, "Command received: $cmd = $value")
-                                onCommand?.invoke(cmd, value)
+                                onReceive(cmd, value)
+//                                onCommand?.invoke(cmd, value)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Bad command payload: $jsonStr", e)
                             }
@@ -59,5 +63,9 @@ class CommandServer(private val connectionManager: USBConnectionManager) {
         isRunning = false
         listenerThread?.interrupt()
         listenerThread = null
+    }
+
+    private fun onReceive(command: String, value: Any?) {
+        clientNetworkProtocolCommand?.onReceive(command, value)
     }
 }

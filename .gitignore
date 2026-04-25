@@ -4,6 +4,7 @@ CameraControllerApp/.gradle/
 CameraControllerApp/build/
 CameraControllerApp/**/build/
 CameraControllerApp/local.properties
+camera-samples/
 *.log
 .DS_Store
 Thumbs.db

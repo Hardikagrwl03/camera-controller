@@ -39,7 +39,6 @@ class CommandServer(private val connectionManager: USBConnectionManager) {
                                 val value: Any? = json.opt("value")
                                 Log.d(TAG, "Command received: $cmd = $value")
                                 onReceive(cmd, value)
-//                                onCommand?.invoke(cmd, value)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Bad command payload: $jsonStr", e)
                             }

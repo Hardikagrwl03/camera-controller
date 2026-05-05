@@ -45,7 +45,7 @@ class CameraController(private val context: Context, private val viewModel: Came
 
     companion object {
         private const val TAG = "CameraController"
-        private const val MAX_IMAGES = 2
+        private const val MAX_IMAGES = 5
         private const val DEFAULT_JPEG_QUALITY: Byte = 60
     }
 
@@ -163,9 +163,10 @@ class CameraController(private val context: Context, private val viewModel: Came
     private fun createImageReader(width: Int, height: Int) {
         imageReader?.close()
         imageReader =
-            ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, MAX_IMAGES).apply {
+            ImageReader.newInstance(width, height, ImageFormat.JPEG, MAX_IMAGES).apply {
                 setOnImageAvailableListener({ reader ->
                     val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    Log.d("Hardik", "createImageReader: height = ${image.height}, width = ${image.width}")
                     try {
                         val jpeg = ImageUtils.extractJpeg(image)
                         onFrameAvailable?.invoke(jpeg)

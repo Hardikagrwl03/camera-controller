@@ -1,6 +1,8 @@
 package com.example.cameracontroller
 
+import android.util.Base64
 import com.example.cameracontroller.interfaces.Protocol
+import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -16,18 +18,17 @@ object NetworkProtocol : Protocol {
     // so no synchronisation is needed.
     private var sendBuffer = ByteArray(256 * 1024)
 
-    override fun writeFrame(outputStream: OutputStream, frameData: ByteArray) {
-        val total = 4 + frameData.size
-        if (sendBuffer.size < total) {
-            sendBuffer = ByteArray(total)
-        }
-        val sz = frameData.size
-        sendBuffer[0] = (sz shr 16).toByte()
-        sendBuffer[1] = (sz shr 8).toByte()
-        sendBuffer[2] = (sz shr  4).toByte()
-        sendBuffer[3] = sz.toByte()
-        System.arraycopy(frameData, 0, sendBuffer, 4, sz)
-        outputStream.write(sendBuffer, 0, total)
+    override fun writeFrame(outputStream: OutputStream, frameData: ByteArray, iso: Int, exposureTime: Long, focusDistance: Float) {
+        val jsonObject = JSONObject()
+        jsonObject.put("frame", Base64.encodeToString(frameData, Base64.NO_WRAP))
+        jsonObject.put("iso", iso)
+        jsonObject.put("exposure_time", exposureTime)
+        jsonObject.put("focal_distance", focusDistance)
+        val jsonBytes = jsonObject.toString().toByteArray(Charsets.UTF_8)
+        val header = ByteBuffer.allocate(4).putInt(jsonBytes.size).array()
+
+        outputStream.write(header)
+        outputStream.write(jsonBytes)
     }
 
     override fun readCommand(inputStream: InputStream): String? {

@@ -1,6 +1,7 @@
 package com.example.cameracontroller
 
 import android.util.Log
+import com.example.cameracontroller.ui.CameraViewModel
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.LockSupport
@@ -10,7 +11,7 @@ import java.util.concurrent.locks.LockSupport
  * overwrites the latest frame; the consumer thread always sends whatever is
  * newest and never blocks behind a queue.
  */
-class FrameStreamer(private val connectionManager: USBConnectionManager) {
+class FrameStreamer(private val connectionManager: USBConnectionManager, private val viewModel: CameraViewModel) {
 
     companion object {
         private const val TAG = "FrameStreamer"
@@ -43,8 +44,11 @@ class FrameStreamer(private val connectionManager: USBConnectionManager) {
                     try {
                         while (isRunning && !socket.isClosed) {
                             val frame = latestFrame.getAndSet(null)
+                            val iso = viewModel.cameraState.value.iso
+                            val exposureTime = viewModel.cameraState.value.exposureTime
+                            val focalDistance = viewModel.cameraState.value.focusDistance
                             if (frame != null) {
-                                NetworkProtocol.writeFrame(out, frame)
+                                NetworkProtocol.writeFrame(out, frame, iso, exposureTime, focalDistance)
                             } else {
                                 LockSupport.parkNanos(PARK_NANOS)
                             }

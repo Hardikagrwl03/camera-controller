@@ -4,6 +4,8 @@ CameraControllerApp/.gradle/
 CameraControllerApp/build/
 CameraControllerApp/**/build/
 CameraControllerApp/local.properties
+camera-samples/
+jetpack-camera-app/
 *.log
 .DS_Store
 Thumbs.db

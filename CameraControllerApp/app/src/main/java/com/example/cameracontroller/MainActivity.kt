@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
     private fun initComponents() {
         cameraController = CameraController(this, viewModel)
         connectionManager = USBConnectionManager()
-        frameStreamer = FrameStreamer(connectionManager)
+        frameStreamer = FrameStreamer(connectionManager, viewModel)
         commandServer = CommandServer(connectionManager)
 
         cameraController.onFrameAvailable = { jpeg ->

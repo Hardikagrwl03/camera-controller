@@ -16,13 +16,14 @@ Then:
     python camera_client.py
 """
 
+import base64
 import json
 import socket
 import struct
 import sys
 import threading
 import time
-
+import subprocess
 import cv2
 import numpy as np
 
@@ -45,6 +46,9 @@ class CameraClient:
 
         # Threaded receiver state
         self._latest_frame: np.ndarray | None = None
+        self.iso: int | None = None
+        self.exposure_time: int | None = None
+        self.focal_distance: float | None = None
         self._frame_lock = threading.Lock()
         self._receiver_thread: threading.Thread | None = None
         self._running = False
@@ -105,24 +109,27 @@ class CameraClient:
         while self._running:
             # --- header (4 bytes) ---
             hdr = self._recv_exact(sock, 4)
-            if hdr is None:
-                break
-            frame_size = struct.unpack(">I", hdr)[0]
-            if frame_size <= 0 or frame_size > 10 * 1024 * 1024:
-                continue
+            length = struct.unpack(">I", hdr)[0]
 
             # --- payload (JPEG bytes) ---
-            data = self._recv_exact(sock, frame_size)
-            if data is None:
-                break
-
-            frame = cv2.imdecode(
-                np.frombuffer(data, dtype=np.uint8, count=frame_size),
-                cv2.IMREAD_COLOR,
-            )
+            data = self._recv_exact(sock, length)
+            json_str = data.decode("utf-8")
+            json_obj = json.loads(json_str)
+            frame_base64 = json_obj.get("frame")
+            frame_bytes = base64.b64decode(frame_base64)
+            iso = json_obj.get("iso")
+            exposure_time = json_obj.get("exposure_time")
+            focal_distance = json_obj.get("focal_distance")
+            print(f"    <<< Frame received (ISO={iso}, Exp={exposure_time} ns, Focus={focal_distance} m)")
+            print(f"        Payload size: {len(data)} bytes")
+            jpeg = np.frombuffer(frame_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
             if frame is not None:
                 with self._frame_lock:
                     self._latest_frame = frame
+                    self.iso = iso
+                    self.exposure_time = exposure_time
+                    self.focal_distance = focal_distance
 
         self._connected = False
 
@@ -135,21 +142,14 @@ class CameraClient:
 
     # ── Pre-allocated receive ───────────────────────────────────────
 
-    def _recv_exact(self, sock: socket.socket, size: int) -> memoryview | None:
-        """Read exactly *size* bytes into the pre-allocated buffer."""
-        if size > len(self._recv_buf):
-            self._recv_buf = bytearray(size)
-        view = memoryview(self._recv_buf)[:size]
-        pos = 0
-        while pos < size:
-            try:
-                n = sock.recv_into(view[pos:])
-            except (ConnectionError, OSError):
+    def _recv_exact(self, sock: socket.socket, size: int):
+        data = b""
+        while len(data) < size:
+            chunk = sock.recv(size - len(data))
+            if not chunk:
                 return None
-            if n == 0:
-                return None
-            pos += n
-        return view
+            data += chunk
+        return data
 
     # ── Commands ────────────────────────────────────────────────────
 
@@ -224,8 +224,24 @@ def print_help():
         "╚══════════════════════════════════════════╝\n"
     )
 
+def adb_connect(FRAME_PORT=FRAME_PORT, COMMAND_PORT=COMMAND_PORT):
+    try:
+        # Check if ADB is available
+        subprocess.run(["adb", "version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Set up port forwarding
+        subprocess.run(["adb", "forward", f"tcp:{FRAME_PORT}", "tcp:5555"], check=True)
+        subprocess.run(["adb", "forward", f"tcp:{COMMAND_PORT}", "tcp:5556"], check=True)
+        print("[+] ADB port forwarding set up successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"[!] ADB error: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print("[!] ADB not found. Please install ADB and ensure it's in your PATH.")
+        sys.exit(1)
+
 
 def main():
+    adb_connect(FRAME_PORT, COMMAND_PORT)
     client = CameraClient()
 
     try:

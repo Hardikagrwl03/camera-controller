@@ -26,6 +26,7 @@ import com.example.cameracontroller.ui.CameraViewModel
 import com.example.cameracontroller.utils.CameraConstants
 import com.example.cameracontroller.utils.CameraConstants.EXPOSURE_RANGE
 import com.example.cameracontroller.utils.CameraConstants.ISO_RANGE
+import java.util.concurrent.ArrayBlockingQueue
 
 data class CaptureMetadata(
     val iso: Int,
@@ -68,13 +69,18 @@ class CameraController(private val context: Context, private val viewModel: Came
     var currentHeight = CameraConstants.HEIGHT
         private set
 
-    var onFrameAvailable: ((ByteArray) -> Unit)? = null
+    var onFrameAvailable: ((FramePacket) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onCaptureMetadata: ((CaptureMetadata) -> Unit)? = null
+
+    private val bufferPool = ArrayBlockingQueue<ByteArray>(8)
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
     fun initialize() {
+        repeat(8) {
+            bufferPool.offer(ByteArray(1024 * 1024))
+        }
         cameraThread = HandlerThread("CameraThread", Process.THREAD_PRIORITY_URGENT_DISPLAY)
             .also { it.start() }
         cameraHandler = Handler(cameraThread!!.looper)
@@ -158,18 +164,44 @@ class CameraController(private val context: Context, private val viewModel: Came
         Log.i(TAG, "Released")
     }
 
+    private fun acquireBuffer(size: Int): ByteArray {
+
+        val buf = bufferPool.poll()
+
+        return if (buf != null && buf.size >= size) {
+            buf
+        } else {
+            ByteArray(size)
+        }
+    }
+
+    fun recycleBuffer(buffer: ByteArray) {
+        bufferPool.offer(buffer)
+    }
+
     // ── Internal pipeline ──────────────────────────────────────────────
 
     private fun createImageReader(width: Int, height: Int) {
         imageReader?.close()
-        imageReader =
-            ImageReader.newInstance(width, height, ImageFormat.JPEG, MAX_IMAGES).apply {
+        imageReader = ImageReader.newInstance(width, height, ImageFormat.JPEG, MAX_IMAGES).apply {
                 setOnImageAvailableListener({ reader ->
                     val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                     Log.d("Hardik", "createImageReader: height = ${image.height}, width = ${image.width}")
                     try {
-                        val jpeg = ImageUtils.extractJpeg(image)
-                        onFrameAvailable?.invoke(jpeg)
+                        val buffer =
+                            image.planes[0].buffer
+
+                        val size =
+                            buffer.remaining()
+
+                        val bytes =
+                            acquireBuffer(size)
+
+                        buffer.get(bytes, 0, size)
+
+                        onFrameAvailable?.invoke(
+                            FramePacket(bytes, size)
+                        )
                     } catch (e: Exception) {
                         Log.e(TAG, "Frame extraction error", e)
                     } finally {
@@ -194,7 +226,7 @@ class CameraController(private val context: Context, private val viewModel: Came
                     Log.i(TAG, "Capture session configured")
                     captureSession = session
                     requestBuilder =
-                        device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(reader.surface)
                             previewSurface?.let { addTarget(it) }
                             applyLowLatencyDefaults(this)
@@ -215,7 +247,7 @@ class CameraController(private val context: Context, private val viewModel: Came
     private fun applyLowLatencyDefaults(builder: CaptureRequest.Builder) {
         builder.apply {
             set(CaptureRequest.JPEG_QUALITY, DEFAULT_JPEG_QUALITY)
-            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
+            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(10, 30))
             set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
             set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
             set(
@@ -223,6 +255,7 @@ class CameraController(private val context: Context, private val viewModel: Came
                 CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF
             )
             set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+            set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
         }
     }
 

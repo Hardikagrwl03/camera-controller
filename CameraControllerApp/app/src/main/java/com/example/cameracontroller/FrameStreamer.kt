@@ -3,6 +3,7 @@ package com.example.cameracontroller
 import android.util.Log
 import com.example.cameracontroller.ui.CameraViewModel
 import java.io.IOException
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.LockSupport
 
@@ -11,15 +12,22 @@ import java.util.concurrent.locks.LockSupport
  * overwrites the latest frame; the consumer thread always sends whatever is
  * newest and never blocks behind a queue.
  */
-class FrameStreamer(private val connectionManager: USBConnectionManager, private val viewModel: CameraViewModel) {
+class FrameStreamer(
+    private val connectionManager: USBConnectionManager,
+    private val viewModel: CameraViewModel,
+    private val recycleBuffer: (ByteArray) -> Unit
+) {
 
     companion object {
         private const val TAG = "FrameStreamer"
         private const val PARK_NANOS = 500_000L   // 0.5 ms idle spin
     }
 
-    private val latestFrame = AtomicReference<ByteArray?>(null)
+    private val latestFrame = AtomicReference<FramePacket?>(null)
+    private val bufferPool = ArrayBlockingQueue<ByteArray>(8)
     private var streamingThread: Thread? = null
+
+
 
     @Volatile
     private var isRunning = false
@@ -32,6 +40,9 @@ class FrameStreamer(private val connectionManager: USBConnectionManager, private
 
     fun start() {
         isRunning = true
+        repeat(8) {
+            bufferPool.offer(ByteArray(1024 * 1024))
+        }
         streamingThread = Thread({
             while (isRunning) {
                 try {
@@ -49,6 +60,7 @@ class FrameStreamer(private val connectionManager: USBConnectionManager, private
                             val focalDistance = viewModel.cameraState.value.focusDistance
                             if (frame != null) {
                                 NetworkProtocol.writeFrame(out, frame, iso, exposureTime, focalDistance)
+                                recycleBuffer(frame.data)
                             } else {
                                 LockSupport.parkNanos(PARK_NANOS)
                             }
@@ -73,10 +85,22 @@ class FrameStreamer(private val connectionManager: USBConnectionManager, private
         streamingThread!!.start()
     }
 
+
     /** Atomically replaces the pending frame with [jpegData] and wakes the sender. */
-    fun queueFrame(jpegData: ByteArray) {
-        if (!isConnected) return
-        latestFrame.set(jpegData)
+    fun queueFrame(packet: FramePacket) {
+
+        if (!isConnected) {
+            recycleBuffer(packet.data)
+            return
+        }
+
+        val old =
+            latestFrame.getAndSet(packet)
+
+        if (old != null) {
+            recycleBuffer(old.data)
+        }
+
         LockSupport.unpark(streamingThread)
     }
 

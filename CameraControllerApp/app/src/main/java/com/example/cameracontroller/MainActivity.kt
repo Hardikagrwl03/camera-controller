@@ -126,11 +126,11 @@ class MainActivity : ComponentActivity() {
     private fun initComponents() {
         cameraController = CameraController(this, viewModel)
         connectionManager = USBConnectionManager()
-        frameStreamer = FrameStreamer(connectionManager, viewModel)
+        frameStreamer = FrameStreamer(connectionManager, viewModel, cameraController::recycleBuffer)
         commandServer = CommandServer(connectionManager)
 
-        cameraController.onFrameAvailable = { jpeg ->
-            frameStreamer.queueFrame(jpeg)
+        cameraController.onFrameAvailable = { frame ->
+            frameStreamer.queueFrame(frame)
             tickFps()
         }
 

@@ -108,22 +108,27 @@ class CameraClient:
         sock = self.frame_socket
         while self._running:
             # --- header (4 bytes) ---
-            hdr = self._recv_exact(sock, 4)
-            length = struct.unpack(">I", hdr)[0]
+            # --- fixed-size binary header ---
+            header = self._recv_exact(sock, 20)
 
-            # --- payload (JPEG bytes) ---
-            data = self._recv_exact(sock, length)
-            json_str = data.decode("utf-8")
-            json_obj = json.loads(json_str)
-            frame_base64 = json_obj.get("frame")
-            frame_bytes = base64.b64decode(frame_base64)
-            iso = json_obj.get("iso")
-            exposure_time = json_obj.get("exposure_time")
-            focal_distance = json_obj.get("focal_distance")
-            print(f"    <<< Frame received (ISO={iso}, Exp={exposure_time} ns, Focus={focal_distance} m)")
-            print(f"        Payload size: {len(data)} bytes")
-            jpeg = np.frombuffer(frame_bytes, dtype=np.uint8)
+            jpeg_length, iso, exposure_time, focal_distance = \
+                struct.unpack(">IIQf", header)
+
+            # --- jpeg payload ---
+            jpeg_bytes = self._recv_exact(sock, jpeg_length)
+
+            jpeg = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+
             frame = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+            # frame = cv2.rotate(frame,cv2.ROTATE_90_CLOCKWISE)
+
+            print(
+                f"<<< Frame "
+                f"size={jpeg_length} "
+                f"ISO={iso} "
+                f"EXP={exposure_time} "
+                f"FOCUS={focal_distance}"
+            )
             if frame is not None:
                 with self._frame_lock:
                     self._latest_frame = frame

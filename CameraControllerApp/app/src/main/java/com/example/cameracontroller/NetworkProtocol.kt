@@ -1,8 +1,6 @@
 package com.example.cameracontroller
 
-import android.util.Base64
 import com.example.cameracontroller.interfaces.Protocol
-import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -16,20 +14,34 @@ object NetworkProtocol : Protocol {
 
     // Reusable send buffer — only the FrameStreamer thread calls writeFrame,
     // so no synchronisation is needed.
-    private var sendBuffer = ByteArray(256 * 1024)
+    private var headerBuffer = ByteBuffer.allocate(20)
 
-    override fun writeFrame(outputStream: OutputStream, frameData: ByteArray, iso: Int, exposureTime: Long, focusDistance: Float) {
-        val jsonObject = JSONObject()
-        jsonObject.put("frame", Base64.encodeToString(frameData, Base64.NO_WRAP))
-        jsonObject.put("iso", iso)
-        jsonObject.put("exposure_time", exposureTime)
-        jsonObject.put("focal_distance", focusDistance)
-        val jsonBytes = jsonObject.toString().toByteArray(Charsets.UTF_8)
-        val header = ByteBuffer.allocate(4).putInt(jsonBytes.size).array()
+    override fun writeFrame(
+        outputStream: OutputStream,
+        frameData: FramePacket,
+        iso: Int, exposureTime: Long,
+        focusDistance: Float
+    ) {
+        headerBuffer.clear()
+        headerBuffer.putInt(frameData.length)
+        headerBuffer.putInt(iso)
+        headerBuffer.putLong(exposureTime)
+        headerBuffer.putFloat(focusDistance)
 
-        outputStream.write(header)
-        outputStream.write(jsonBytes)
+        outputStream.write(
+            headerBuffer.array(),
+            0,
+            headerBuffer.position()
+        )
+
+        outputStream.write(
+            frameData.data,
+            0,
+            frameData.length
+        )
+        headerBuffer.rewind()
     }
+
 
     override fun readCommand(inputStream: InputStream): String? {
         val sizeBytes = readExact(inputStream, 4) ?: return null

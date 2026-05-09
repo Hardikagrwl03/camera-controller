@@ -28,19 +28,6 @@ import com.example.cameracontroller.utils.CameraConstants.EXPOSURE_RANGE
 import com.example.cameracontroller.utils.CameraConstants.ISO_RANGE
 import java.util.concurrent.ArrayBlockingQueue
 
-data class CaptureMetadata(
-    val iso: Int,
-    val exposureNs: Long,
-    val focusDistance: Float,
-    val gain: Float,
-)
-
-data class CameraCapabilities(
-    val isoRange: Range<Int>,
-    val exposureRange: Range<Long>,
-    val minFocusDistance: Float,
-)
-
 class CameraController(private val context: Context, private val viewModel: CameraViewModel) :
     CameraCommandInterface {
 
@@ -71,7 +58,6 @@ class CameraController(private val context: Context, private val viewModel: Came
 
     var onFrameAvailable: ((FramePacket) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
-    var onCaptureMetadata: ((CaptureMetadata) -> Unit)? = null
 
     private val bufferPool = ArrayBlockingQueue<ByteArray>(8)
 
@@ -101,17 +87,6 @@ class CameraController(private val context: Context, private val viewModel: Came
     fun getSupportedResolutions(): List<Size> {
         val map = characteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         return map?.getOutputSizes(ImageFormat.JPEG)?.toList() ?: emptyList()
-    }
-
-    fun getCapabilities(): CameraCapabilities? {
-        val chars = characteristics ?: return null
-        val isoRange = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
-            ?: ISO_RANGE
-        val exposureRange = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
-            ?: EXPOSURE_RANGE
-        val minFocusDist = chars.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
-            ?: 0f
-        return CameraCapabilities(isoRange, exposureRange, minFocusDist)
     }
 
     @Suppress("MissingPermission")
@@ -247,7 +222,7 @@ class CameraController(private val context: Context, private val viewModel: Came
     private fun applyLowLatencyDefaults(builder: CaptureRequest.Builder) {
         builder.apply {
             set(CaptureRequest.JPEG_QUALITY, DEFAULT_JPEG_QUALITY)
-            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(10, 30))
+            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(5, 15))
             set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
             set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
             set(
@@ -267,12 +242,6 @@ class CameraController(private val context: Context, private val viewModel: Came
         ) {
             viewModel.onCaptureResult(result)
             viewModel.updateRequestSettings(request)
-            val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
-            val exposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
-            val focusDist = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: 0f
-            val postGain = result.get(CaptureResult.CONTROL_POST_RAW_SENSITIVITY_BOOST)
-            val gain = (postGain ?: 100) / 100f
-            onCaptureMetadata?.invoke(CaptureMetadata(iso, exposureNs, focusDist, gain))
         }
     }
 
@@ -280,7 +249,7 @@ class CameraController(private val context: Context, private val viewModel: Came
         val builder = requestBuilder ?: return
         val session = captureSession ?: return
         try {
-            session.setRepeatingRequest(builder.build(), captureCallback, cameraHandler)
+            session.setRepeatingRequest(builder.build(), captureCallback, cameraHandler) //CaptureCallback
         } catch (e: CameraAccessException) {
             Log.e(TAG, "Failed to set repeating request", e)
         }

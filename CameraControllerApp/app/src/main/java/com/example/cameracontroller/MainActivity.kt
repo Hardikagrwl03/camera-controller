@@ -73,12 +73,6 @@ class MainActivity : ComponentActivity() {
     private val statusText = mutableStateOf("Initialising …")
     private val fpsText = mutableStateOf("— FPS")
 
-    private val isoText = mutableStateOf("—")
-    private val shutterText = mutableStateOf("—")
-    private val focusDistText = mutableStateOf("—")
-    private val gainText = mutableStateOf("—")
-    private val dimensionsText = mutableStateOf("—")
-
     private var frameCount = 0
     private var lastFpsTimestamp = System.currentTimeMillis()
 
@@ -132,18 +126,6 @@ class MainActivity : ComponentActivity() {
         cameraController.onFrameAvailable = { frame ->
             frameStreamer.queueFrame(frame)
             tickFps()
-        }
-
-        cameraController.onCaptureMetadata = { meta ->
-            runOnUiThread {
-                isoText.value = "ISO ${meta.iso}"
-                shutterText.value = formatShutter(meta.exposureNs)
-                focusDistText.value = if (meta.focusDistance > 0f)
-                    String.format("%.2f m", 1.0 / meta.focusDistance) else "∞"
-                gainText.value = String.format("×%.1f", meta.gain)
-                dimensionsText.value =
-                    "${cameraController.currentWidth}×${cameraController.currentHeight}"
-            }
         }
 
         frameStreamer.onConnectionChanged = { connected ->
@@ -307,25 +289,12 @@ class MainActivity : ComponentActivity() {
                     .padding(16.dp)
             )
 
-            // Info button — top-right, rotates with device
-            InfoButton(
-                state,
-                onClick = { showCapabilities = true },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-            )
-
             CameraInfoOverlay(
                 state,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
             )
-
-            if (showCapabilities) {
-                CapabilitiesOverlay(onDismiss = { showCapabilities = false })
-            }
         }
     }
 
@@ -388,12 +357,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun CameraInfoOverlay(state: CameraState, modifier: Modifier = Modifier) {
-        val fps by fpsText
-        val iso by isoText
-        val shutter by shutterText
-        val focusDist by focusDistText
-        val gain by gainText
-        val dims by dimensionsText
 
         Box(
             modifier = modifier
@@ -434,168 +397,5 @@ class MainActivity : ComponentActivity() {
                 fontWeight = FontWeight.SemiBold
             )
         }
-    }
-
-    @Composable
-    fun InfoButton(state: CameraState, onClick: () -> Unit, modifier: Modifier = Modifier) {
-        IconButton(
-            onClick = onClick,
-            modifier = modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f))
-        ) {
-            Text(
-                text = "i",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Serif
-            )
-        }
-    }
-
-    @Composable
-    fun CapabilitiesOverlay(onDismiss: () -> Unit) {
-        val caps = remember { cameraController.getCapabilities() }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.85f))
-                .clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF1E1E1E))
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Device Capabilities",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-
-                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
-
-                if (caps == null) {
-                    Text(
-                        text = "Camera not initialised yet",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp
-                    )
-                } else {
-                    CapabilitySection(
-                        title = "ISO Range",
-                        values = listOf(
-                            "Min: ${caps.isoRange.lower}",
-                            "Max: ${caps.isoRange.upper}"
-                        )
-                    )
-
-                    CapabilitySection(
-                        title = "Shutter Speed Range",
-                        values = buildShutterList(caps.exposureRange)
-                    )
-
-                    CapabilitySection(
-                        title = "Focus Distance",
-                        values = buildFocusList(caps.minFocusDistance)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "Tap anywhere to close",
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun CapabilitySection(title: String, values: List<String>) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = title,
-                color = Color(0xFF64B5F6),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            values.forEach { v ->
-                Text(
-                    text = "  $v",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-    }
-
-    private fun buildShutterList(range: android.util.Range<Long>): List<String> {
-        val minNs = range.lower
-        val maxNs = range.upper
-
-        val result = mutableListOf(
-            "Fastest: ${formatShutter(minNs)}",
-            "Slowest: ${formatShutter(maxNs)}",
-            "",
-            "Common values in range:"
-        )
-
-        val standardSpeeds = longArrayOf(
-            1_000_000_000L / 8000,
-            1_000_000_000L / 4000,
-            1_000_000_000L / 2000,
-            1_000_000_000L / 1000,
-            1_000_000_000L / 500,
-            1_000_000_000L / 250,
-            1_000_000_000L / 125,
-            1_000_000_000L / 60,
-            1_000_000_000L / 30,
-            1_000_000_000L / 15,
-            1_000_000_000L / 8,
-            1_000_000_000L / 4,
-            1_000_000_000L / 2,
-            1_000_000_000L,
-            2_000_000_000L,
-            4_000_000_000L,
-            8_000_000_000L,
-            16_000_000_000L,
-            30_000_000_000L,
-        )
-
-        standardSpeeds
-            .filter { it in minNs..maxNs }
-            .forEach { result.add("  ${formatShutter(it)}") }
-
-        return result
-    }
-
-    private fun buildFocusList(minFocusDist: Float): List<String> {
-        if (minFocusDist <= 0f) {
-            return listOf("Fixed-focus lens (no manual focus)")
-        }
-        val closestCm = (100.0 / minFocusDist)
-        return listOf(
-            "Range: ${String.format("%.1f cm", closestCm)}  →  ∞",
-            "Min focus dist: ${String.format("%.2f", minFocusDist)} diopters",
-            "",
-            "Diopter = 1/distance(m)",
-            "0.0 diopters = infinity"
-        )
     }
 }

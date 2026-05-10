@@ -158,24 +158,16 @@ class CameraController(private val context: Context, private val viewModel: Came
 
     private fun createImageReader(width: Int, height: Int) {
         imageReader?.close()
-        imageReader = ImageReader.newInstance(width, height, ImageFormat.JPEG, MAX_IMAGES).apply {
+        imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, MAX_IMAGES).apply {
                 setOnImageAvailableListener({ reader ->
                     val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                     Log.d("Hardik", "createImageReader: height = ${image.height}, width = ${image.width}")
                     try {
-                        val buffer =
-                            image.planes[0].buffer
-
-                        val size =
-                            buffer.remaining()
-
                         val bytes =
-                            acquireBuffer(size)
-
-                        buffer.get(bytes, 0, size)
+                            ImageUtils.yuv420ToNv21(image)
 
                         onFrameAvailable?.invoke(
-                            FramePacket(bytes, size)
+                            FramePacket(bytes, bytes.size)
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "Frame extraction error", e)
